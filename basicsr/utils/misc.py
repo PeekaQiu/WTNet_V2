@@ -15,8 +15,30 @@ def set_random_seed(seed):
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
-    torch.cuda.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+
+
+def get_torch_device(preferred_device=None, num_gpu=0):
+    """Resolve the runtime torch device from config."""
+    if preferred_device is not None:
+        preferred_device = preferred_device.lower()
+        if preferred_device == 'cpu':
+            return torch.device('cpu')
+        if preferred_device == 'cuda':
+            if not torch.cuda.is_available():
+                raise RuntimeError('Config requests CUDA, but no CUDA device is available.')
+            return torch.device('cuda')
+        if preferred_device == 'mps':
+            if not hasattr(torch.backends, 'mps') or not torch.backends.mps.is_available():
+                raise RuntimeError('Config requests MPS, but MPS is not available on this machine.')
+            return torch.device('mps')
+        raise ValueError(f'Unsupported device setting: {preferred_device}')
+
+    if num_gpu != 0 and torch.cuda.is_available():
+        return torch.device('cuda')
+    return torch.device('cpu')
 
 
 def get_time_str():

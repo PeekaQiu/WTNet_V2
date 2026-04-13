@@ -16,7 +16,7 @@ from basicsr.models import create_model
 from basicsr.utils import (MessageLogger, check_resume, get_env_info,
                            get_root_logger, get_time_str, init_tb_logger,
                            init_wandb_logger, make_exp_dirs, mkdir_and_rename,
-                           set_random_seed)
+                           set_random_seed, get_torch_device)
 from basicsr.utils.dist_util import get_dist_info, init_dist
 from basicsr.utils.misc import mkdir_and_rename2
 from basicsr.utils.options import dict2str, parse
@@ -151,7 +151,9 @@ def main():
     # parse options, set distributed setting, set ramdom seed
     opt = parse_options(is_train=True)
 
-    torch.backends.cudnn.benchmark = True
+    device = get_torch_device(opt.get('device'), opt.get('num_gpu', 0))
+    if device.type == 'cuda':
+        torch.backends.cudnn.benchmark = True
     # torch.backends.cudnn.deterministic = True
 
     # automatic resume ..
@@ -170,10 +172,10 @@ def main():
 
     # load resume states if necessary，resume_state是重新训练的时候接上的吗？
     if opt['path'].get('resume_state'):
-        device_id = torch.cuda.current_device()
-        resume_state = torch.load(
-            opt['path']['resume_state'],
-            map_location=lambda storage, loc: storage.cuda(device_id))
+        map_location = device if device.type != 'cuda' else (
+            lambda storage, loc: storage.cuda(torch.cuda.current_device()))
+        resume_state = torch.load(opt['path']['resume_state'],
+                                  map_location=map_location)
     else:
         resume_state = None
 

@@ -6,7 +6,7 @@ from basicsr.data import create_dataloader, create_dataset
 from basicsr.models import create_model
 from basicsr.train import parse_options
 from basicsr.utils import (get_env_info, get_root_logger, get_time_str,
-                           make_exp_dirs)
+                           get_torch_device, make_exp_dirs)
 from basicsr.utils.options import dict2str
 
 
@@ -14,7 +14,9 @@ def main():
     # parse options, set distributed setting, set ramdom seed
     opt = parse_options(is_train=False)
 
-    torch.backends.cudnn.benchmark = True
+    device = get_torch_device(opt.get('device'), opt.get('num_gpu', 0))
+    if device.type == 'cuda':
+        torch.backends.cudnn.benchmark = True
     # torch.backends.cudnn.deterministic = True
 
     # mkdir and initialize loggers
