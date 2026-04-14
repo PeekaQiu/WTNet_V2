@@ -165,7 +165,8 @@ def main():
         states = []
 
     resume_state = None
-    if len(states) > 0: #如果路径已存在
+    auto_resume = opt['path'].get('auto_resume', True)
+    if auto_resume and len(states) > 0: #如果路径已存在
         max_state_file = '{}.state'.format(max([int(x[0:-6]) for x in states]))
         resume_state = os.path.join(state_folder_path, max_state_file)
         opt['path']['resume_state'] = resume_state

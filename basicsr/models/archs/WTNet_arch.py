@@ -11,6 +11,17 @@ import numbers
 
 from einops import rearrange
 from pytorch_wavelets import DWTForward, DWTInverse
+from basicsr.models.archs.wavelet_mamba_blocks import (
+    FourDirectionSSMBlock,
+    LocalMixBlock,
+    WaveletMambaBlock,
+    WaveletMambaFusionBiasedBlock,
+    WaveletMambaFusionBlock,
+    WaveletMambaFusionAnchoredBlock,
+    WaveletMambaModulatedBlock,
+    WaveletMambaResidualFusionBlock,
+    WaveletMambaSpatialFusionBlock,
+)
 
 
 ##########################################################################
@@ -150,6 +161,164 @@ class TransformerBlock(nn.Module):
         return x
 
 
+def build_operator_stage(stage_name,
+                         dim,
+                         num_heads,
+                         num_blocks,
+                         ffn_expansion_factor,
+                         bias,
+                         layer_norm_type,
+                         use_wavelet_mamba=False,
+                         use_wavelet_mamba_fusion=False,
+                         use_wavelet_mamba_fusion_biased=False,
+                         use_wavelet_mamba_fusion_anchored=False,
+                         use_wavelet_mamba_residual_fusion=False,
+                         use_wavelet_mamba_modulation=False,
+                         use_wavelet_mamba_spatial_fusion=False,
+                         use_ssm_only=False,
+                         use_local_mix=False,
+                         wavelet_mamba_stages=None,
+                         wavelet_mamba_fusion_stages=None,
+                         wavelet_mamba_fusion_biased_stages=None,
+                         wavelet_mamba_fusion_anchored_stages=None,
+                         wavelet_mamba_residual_fusion_stages=None,
+                         wavelet_mamba_modulation_stages=None,
+                         wavelet_mamba_spatial_fusion_stages=None,
+                         ssm_only_stages=None,
+                         local_mix_stages=None,
+                         local_kernel_sizes=(3, 5)):
+    if wavelet_mamba_stages is None:
+        wavelet_mamba_stages = []
+    if wavelet_mamba_fusion_stages is None:
+        wavelet_mamba_fusion_stages = wavelet_mamba_stages if use_wavelet_mamba_fusion else []
+    if wavelet_mamba_fusion_biased_stages is None:
+        wavelet_mamba_fusion_biased_stages = (
+            wavelet_mamba_stages if use_wavelet_mamba_fusion_biased else [])
+    if wavelet_mamba_fusion_anchored_stages is None:
+        wavelet_mamba_fusion_anchored_stages = (
+            wavelet_mamba_stages if use_wavelet_mamba_fusion_anchored else [])
+    if wavelet_mamba_residual_fusion_stages is None:
+        wavelet_mamba_residual_fusion_stages = (
+            wavelet_mamba_stages if use_wavelet_mamba_residual_fusion else [])
+    if wavelet_mamba_modulation_stages is None:
+        wavelet_mamba_modulation_stages = wavelet_mamba_stages if use_wavelet_mamba_modulation else []
+    if wavelet_mamba_spatial_fusion_stages is None:
+        wavelet_mamba_spatial_fusion_stages = (
+            wavelet_mamba_stages if use_wavelet_mamba_spatial_fusion else [])
+    if ssm_only_stages is None:
+        ssm_only_stages = wavelet_mamba_stages if use_ssm_only else []
+    if local_mix_stages is None:
+        local_mix_stages = wavelet_mamba_stages if use_local_mix else []
+
+    use_mamba = use_wavelet_mamba and stage_name in set(wavelet_mamba_stages)
+    use_mamba_fusion = use_wavelet_mamba_fusion and stage_name in set(wavelet_mamba_fusion_stages)
+    use_mamba_fusion_biased = (
+        use_wavelet_mamba_fusion_biased
+        and stage_name in set(wavelet_mamba_fusion_biased_stages))
+    use_mamba_fusion_anchored = (
+        use_wavelet_mamba_fusion_anchored
+        and stage_name in set(wavelet_mamba_fusion_anchored_stages))
+    use_mamba_residual_fusion = (
+        use_wavelet_mamba_residual_fusion
+        and stage_name in set(wavelet_mamba_residual_fusion_stages))
+    use_mamba_modulation = (
+        use_wavelet_mamba_modulation and stage_name in set(wavelet_mamba_modulation_stages))
+    use_mamba_spatial_fusion = (
+        use_wavelet_mamba_spatial_fusion
+        and stage_name in set(wavelet_mamba_spatial_fusion_stages))
+    use_ssm = use_ssm_only and stage_name in set(ssm_only_stages)
+    use_local = use_local_mix and stage_name in set(local_mix_stages)
+    if use_mamba_spatial_fusion:
+        return nn.Sequential(*[
+            WaveletMambaSpatialFusionBlock(
+                dim=dim,
+                ffn_expansion_factor=ffn_expansion_factor,
+                bias=bias,
+                LayerNorm_type=layer_norm_type,
+                local_kernel_sizes=local_kernel_sizes) for _ in range(num_blocks)
+        ])
+    if use_mamba_modulation:
+        return nn.Sequential(*[
+            WaveletMambaModulatedBlock(
+                dim=dim,
+                ffn_expansion_factor=ffn_expansion_factor,
+                bias=bias,
+                LayerNorm_type=layer_norm_type,
+                local_kernel_sizes=local_kernel_sizes) for _ in range(num_blocks)
+        ])
+    if use_mamba_residual_fusion:
+        return nn.Sequential(*[
+            WaveletMambaResidualFusionBlock(
+                dim=dim,
+                ffn_expansion_factor=ffn_expansion_factor,
+                bias=bias,
+                LayerNorm_type=layer_norm_type,
+                local_kernel_sizes=local_kernel_sizes) for _ in range(num_blocks)
+        ])
+    if use_mamba_fusion_biased:
+        return nn.Sequential(*[
+            WaveletMambaFusionBiasedBlock(
+                dim=dim,
+                ffn_expansion_factor=ffn_expansion_factor,
+                bias=bias,
+                LayerNorm_type=layer_norm_type,
+                local_kernel_sizes=local_kernel_sizes) for _ in range(num_blocks)
+        ])
+    if use_mamba_fusion_anchored:
+        return nn.Sequential(*[
+            WaveletMambaFusionAnchoredBlock(
+                dim=dim,
+                ffn_expansion_factor=ffn_expansion_factor,
+                bias=bias,
+                LayerNorm_type=layer_norm_type,
+                local_kernel_sizes=local_kernel_sizes) for _ in range(num_blocks)
+        ])
+    if use_mamba_fusion:
+        return nn.Sequential(*[
+            WaveletMambaFusionBlock(
+                dim=dim,
+                ffn_expansion_factor=ffn_expansion_factor,
+                bias=bias,
+                LayerNorm_type=layer_norm_type,
+                local_kernel_sizes=local_kernel_sizes) for _ in range(num_blocks)
+        ])
+    if use_mamba:
+        return nn.Sequential(*[
+            WaveletMambaBlock(
+                dim=dim,
+                ffn_expansion_factor=ffn_expansion_factor,
+                bias=bias,
+                LayerNorm_type=layer_norm_type,
+                local_kernel_sizes=local_kernel_sizes) for _ in range(num_blocks)
+        ])
+    if use_ssm:
+        return nn.Sequential(*[
+            FourDirectionSSMBlock(
+                dim=dim,
+                ffn_expansion_factor=ffn_expansion_factor,
+                bias=bias,
+                LayerNorm_type=layer_norm_type) for _ in range(num_blocks)
+        ])
+    if use_local:
+        return nn.Sequential(*[
+            LocalMixBlock(
+                dim=dim,
+                ffn_expansion_factor=ffn_expansion_factor,
+                bias=bias,
+                LayerNorm_type=layer_norm_type,
+                local_kernel_sizes=local_kernel_sizes) for _ in range(num_blocks)
+        ])
+
+    return nn.Sequential(*[
+        TransformerBlock(
+            dim=dim,
+            num_heads=num_heads,
+            ffn_expansion_factor=ffn_expansion_factor,
+            bias=bias,
+            LayerNorm_type=layer_norm_type) for _ in range(num_blocks)
+    ])
+
+
 class Calibra(nn.Module):
     def __init__(
             self, n_fea_middle, n_fea_in=3, n_fea_out=3):  #__init__部分是内部属性，而forward的输入才是外部输入
@@ -229,7 +398,26 @@ class WTNet(nn.Module):
         ffn_expansion_factor = 2.66,
         bias = False,
         LayerNorm_type = 'WithBias',   ## Other option 'BiasFree'
-        dual_pixel_task = False        ## True for dual-pixel defocus deblurring only. Also set inp_channels=6
+        dual_pixel_task = False,       ## True for dual-pixel defocus deblurring only. Also set inp_channels=6
+        use_wavelet_mamba = False,
+        use_wavelet_mamba_fusion = False,
+        use_wavelet_mamba_fusion_biased = False,
+        use_wavelet_mamba_fusion_anchored = False,
+        use_wavelet_mamba_residual_fusion = False,
+        use_wavelet_mamba_modulation = False,
+        use_wavelet_mamba_spatial_fusion = False,
+        use_ssm_only = False,
+        use_local_mix = False,
+        wavelet_mamba_stages = None,
+        wavelet_mamba_fusion_stages = None,
+        wavelet_mamba_fusion_biased_stages = None,
+        wavelet_mamba_fusion_anchored_stages = None,
+        wavelet_mamba_residual_fusion_stages = None,
+        wavelet_mamba_modulation_stages = None,
+        wavelet_mamba_spatial_fusion_stages = None,
+        ssm_only_stages = None,
+        local_mix_stages = None,
+        local_kernel_sizes = (3, 5)
     ):
 
         super(WTNet, self).__init__()
@@ -241,22 +429,224 @@ class WTNet(nn.Module):
         self.dwc1 = nn.Conv2d(dim*3,dim*3,3,1,1,groups=dim*3,bias=False)
         self.dwc2 = nn.Conv2d(dim*3,dim*3,3,1,1,groups=dim*3,bias=False)
         self.dwc3 = nn.Conv2d(dim*3,dim*3,3,1,1,groups=dim*3,bias=False)
-        self.encoder_level1 = nn.Sequential(*[TransformerBlock(dim=dim, num_heads=heads[0], ffn_expansion_factor=ffn_expansion_factor, bias=bias, LayerNorm_type=LayerNorm_type) for i in range(num_blocks[0])])
+        self.encoder_level1 = build_operator_stage(
+            stage_name='encoder_level1',
+            dim=dim,
+            num_heads=heads[0],
+            num_blocks=num_blocks[0],
+            ffn_expansion_factor=ffn_expansion_factor,
+            bias=bias,
+            layer_norm_type=LayerNorm_type,
+            use_wavelet_mamba=use_wavelet_mamba,
+            use_wavelet_mamba_fusion=use_wavelet_mamba_fusion,
+            use_wavelet_mamba_fusion_biased=use_wavelet_mamba_fusion_biased,
+            use_wavelet_mamba_fusion_anchored=use_wavelet_mamba_fusion_anchored,
+            use_wavelet_mamba_residual_fusion=use_wavelet_mamba_residual_fusion,
+            use_wavelet_mamba_modulation=use_wavelet_mamba_modulation,
+            use_wavelet_mamba_spatial_fusion=use_wavelet_mamba_spatial_fusion,
+            use_ssm_only=use_ssm_only,
+            use_local_mix=use_local_mix,
+            wavelet_mamba_stages=wavelet_mamba_stages,
+            wavelet_mamba_fusion_stages=wavelet_mamba_fusion_stages,
+            wavelet_mamba_fusion_biased_stages=wavelet_mamba_fusion_biased_stages,
+            wavelet_mamba_fusion_anchored_stages=wavelet_mamba_fusion_anchored_stages,
+            wavelet_mamba_residual_fusion_stages=wavelet_mamba_residual_fusion_stages,
+            wavelet_mamba_modulation_stages=wavelet_mamba_modulation_stages,
+            wavelet_mamba_spatial_fusion_stages=wavelet_mamba_spatial_fusion_stages,
+            ssm_only_stages=ssm_only_stages,
+            local_mix_stages=local_mix_stages,
+            local_kernel_sizes=local_kernel_sizes)
         
-        self.encoder_level2 = nn.Sequential(*[TransformerBlock(dim=dim, num_heads=heads[1], ffn_expansion_factor=ffn_expansion_factor, bias=bias, LayerNorm_type=LayerNorm_type) for i in range(num_blocks[1])])
-        self.encoder_level3 = nn.Sequential(*[TransformerBlock(dim=dim, num_heads=heads[1], ffn_expansion_factor=ffn_expansion_factor, bias=bias, LayerNorm_type=LayerNorm_type) for i in range(num_blocks[2])])
+        self.encoder_level2 = build_operator_stage(
+            stage_name='encoder_level2',
+            dim=dim,
+            num_heads=heads[1],
+            num_blocks=num_blocks[1],
+            ffn_expansion_factor=ffn_expansion_factor,
+            bias=bias,
+            layer_norm_type=LayerNorm_type,
+            use_wavelet_mamba=use_wavelet_mamba,
+            use_wavelet_mamba_fusion=use_wavelet_mamba_fusion,
+            use_wavelet_mamba_fusion_biased=use_wavelet_mamba_fusion_biased,
+            use_wavelet_mamba_fusion_anchored=use_wavelet_mamba_fusion_anchored,
+            use_wavelet_mamba_residual_fusion=use_wavelet_mamba_residual_fusion,
+            use_wavelet_mamba_modulation=use_wavelet_mamba_modulation,
+            use_wavelet_mamba_spatial_fusion=use_wavelet_mamba_spatial_fusion,
+            use_ssm_only=use_ssm_only,
+            use_local_mix=use_local_mix,
+            wavelet_mamba_stages=wavelet_mamba_stages,
+            wavelet_mamba_fusion_stages=wavelet_mamba_fusion_stages,
+            wavelet_mamba_fusion_biased_stages=wavelet_mamba_fusion_biased_stages,
+            wavelet_mamba_fusion_anchored_stages=wavelet_mamba_fusion_anchored_stages,
+            wavelet_mamba_residual_fusion_stages=wavelet_mamba_residual_fusion_stages,
+            wavelet_mamba_modulation_stages=wavelet_mamba_modulation_stages,
+            wavelet_mamba_spatial_fusion_stages=wavelet_mamba_spatial_fusion_stages,
+            ssm_only_stages=ssm_only_stages,
+            local_mix_stages=local_mix_stages,
+            local_kernel_sizes=local_kernel_sizes)
+        self.encoder_level3 = build_operator_stage(
+            stage_name='encoder_level3',
+            dim=dim,
+            num_heads=heads[1],
+            num_blocks=num_blocks[2],
+            ffn_expansion_factor=ffn_expansion_factor,
+            bias=bias,
+            layer_norm_type=LayerNorm_type,
+            use_wavelet_mamba=use_wavelet_mamba,
+            use_wavelet_mamba_fusion=use_wavelet_mamba_fusion,
+            use_wavelet_mamba_fusion_biased=use_wavelet_mamba_fusion_biased,
+            use_wavelet_mamba_fusion_anchored=use_wavelet_mamba_fusion_anchored,
+            use_wavelet_mamba_residual_fusion=use_wavelet_mamba_residual_fusion,
+            use_wavelet_mamba_modulation=use_wavelet_mamba_modulation,
+            use_wavelet_mamba_spatial_fusion=use_wavelet_mamba_spatial_fusion,
+            use_ssm_only=use_ssm_only,
+            use_local_mix=use_local_mix,
+            wavelet_mamba_stages=wavelet_mamba_stages,
+            wavelet_mamba_fusion_stages=wavelet_mamba_fusion_stages,
+            wavelet_mamba_fusion_biased_stages=wavelet_mamba_fusion_biased_stages,
+            wavelet_mamba_fusion_anchored_stages=wavelet_mamba_fusion_anchored_stages,
+            wavelet_mamba_residual_fusion_stages=wavelet_mamba_residual_fusion_stages,
+            wavelet_mamba_modulation_stages=wavelet_mamba_modulation_stages,
+            wavelet_mamba_spatial_fusion_stages=wavelet_mamba_spatial_fusion_stages,
+            ssm_only_stages=ssm_only_stages,
+            local_mix_stages=local_mix_stages,
+            local_kernel_sizes=local_kernel_sizes)
       
-        self.latent = nn.Sequential(*[TransformerBlock(dim=dim, num_heads=heads[3], ffn_expansion_factor=ffn_expansion_factor, bias=bias, LayerNorm_type=LayerNorm_type) for i in range(num_blocks[3])])
+        self.latent = build_operator_stage(
+            stage_name='latent',
+            dim=dim,
+            num_heads=heads[3],
+            num_blocks=num_blocks[3],
+            ffn_expansion_factor=ffn_expansion_factor,
+            bias=bias,
+            layer_norm_type=LayerNorm_type,
+            use_wavelet_mamba=use_wavelet_mamba,
+            use_wavelet_mamba_fusion=use_wavelet_mamba_fusion,
+            use_wavelet_mamba_fusion_biased=use_wavelet_mamba_fusion_biased,
+            use_wavelet_mamba_fusion_anchored=use_wavelet_mamba_fusion_anchored,
+            use_wavelet_mamba_residual_fusion=use_wavelet_mamba_residual_fusion,
+            use_wavelet_mamba_modulation=use_wavelet_mamba_modulation,
+            use_wavelet_mamba_spatial_fusion=use_wavelet_mamba_spatial_fusion,
+            use_ssm_only=use_ssm_only,
+            use_local_mix=use_local_mix,
+            wavelet_mamba_stages=wavelet_mamba_stages,
+            wavelet_mamba_fusion_stages=wavelet_mamba_fusion_stages,
+            wavelet_mamba_fusion_biased_stages=wavelet_mamba_fusion_biased_stages,
+            wavelet_mamba_fusion_anchored_stages=wavelet_mamba_fusion_anchored_stages,
+            wavelet_mamba_residual_fusion_stages=wavelet_mamba_residual_fusion_stages,
+            wavelet_mamba_modulation_stages=wavelet_mamba_modulation_stages,
+            wavelet_mamba_spatial_fusion_stages=wavelet_mamba_spatial_fusion_stages,
+            ssm_only_stages=ssm_only_stages,
+            local_mix_stages=local_mix_stages,
+            local_kernel_sizes=local_kernel_sizes)
         
         self.reduce_chan_level3 = nn.Conv2d(int(dim*2), int(dim), kernel_size=1, bias=bias)
-        self.decoder_level3 = nn.Sequential(*[TransformerBlock(dim=int(dim), num_heads=heads[2], ffn_expansion_factor=ffn_expansion_factor, bias=bias, LayerNorm_type=LayerNorm_type) for i in range(num_blocks[2])])
+        self.decoder_level3 = build_operator_stage(
+            stage_name='decoder_level3',
+            dim=int(dim),
+            num_heads=heads[2],
+            num_blocks=num_blocks[2],
+            ffn_expansion_factor=ffn_expansion_factor,
+            bias=bias,
+            layer_norm_type=LayerNorm_type,
+            use_wavelet_mamba=use_wavelet_mamba,
+            use_wavelet_mamba_fusion=use_wavelet_mamba_fusion,
+            use_wavelet_mamba_fusion_biased=use_wavelet_mamba_fusion_biased,
+            use_wavelet_mamba_fusion_anchored=use_wavelet_mamba_fusion_anchored,
+            use_wavelet_mamba_residual_fusion=use_wavelet_mamba_residual_fusion,
+            use_wavelet_mamba_modulation=use_wavelet_mamba_modulation,
+            use_wavelet_mamba_spatial_fusion=use_wavelet_mamba_spatial_fusion,
+            use_ssm_only=use_ssm_only,
+            use_local_mix=use_local_mix,
+            wavelet_mamba_stages=wavelet_mamba_stages,
+            wavelet_mamba_fusion_stages=wavelet_mamba_fusion_stages,
+            wavelet_mamba_fusion_biased_stages=wavelet_mamba_fusion_biased_stages,
+            wavelet_mamba_fusion_anchored_stages=wavelet_mamba_fusion_anchored_stages,
+            wavelet_mamba_residual_fusion_stages=wavelet_mamba_residual_fusion_stages,
+            wavelet_mamba_modulation_stages=wavelet_mamba_modulation_stages,
+            wavelet_mamba_spatial_fusion_stages=wavelet_mamba_spatial_fusion_stages,
+            ssm_only_stages=ssm_only_stages,
+            local_mix_stages=local_mix_stages,
+            local_kernel_sizes=local_kernel_sizes)
 
         self.reduce_chan_level2 = nn.Conv2d(int(dim*2), int(dim), kernel_size=1, bias=bias)
-        self.decoder_level2 = nn.Sequential(*[TransformerBlock(dim=int(dim), num_heads=heads[1], ffn_expansion_factor=ffn_expansion_factor, bias=bias, LayerNorm_type=LayerNorm_type) for i in range(num_blocks[1])])
+        self.decoder_level2 = build_operator_stage(
+            stage_name='decoder_level2',
+            dim=int(dim),
+            num_heads=heads[1],
+            num_blocks=num_blocks[1],
+            ffn_expansion_factor=ffn_expansion_factor,
+            bias=bias,
+            layer_norm_type=LayerNorm_type,
+            use_wavelet_mamba=use_wavelet_mamba,
+            use_wavelet_mamba_fusion=use_wavelet_mamba_fusion,
+            use_wavelet_mamba_fusion_biased=use_wavelet_mamba_fusion_biased,
+            use_wavelet_mamba_fusion_anchored=use_wavelet_mamba_fusion_anchored,
+            use_wavelet_mamba_residual_fusion=use_wavelet_mamba_residual_fusion,
+            use_wavelet_mamba_modulation=use_wavelet_mamba_modulation,
+            use_wavelet_mamba_spatial_fusion=use_wavelet_mamba_spatial_fusion,
+            use_ssm_only=use_ssm_only,
+            use_local_mix=use_local_mix,
+            wavelet_mamba_stages=wavelet_mamba_stages,
+            wavelet_mamba_fusion_stages=wavelet_mamba_fusion_stages,
+            wavelet_mamba_fusion_biased_stages=wavelet_mamba_fusion_biased_stages,
+            wavelet_mamba_fusion_anchored_stages=wavelet_mamba_fusion_anchored_stages,
+            wavelet_mamba_residual_fusion_stages=wavelet_mamba_residual_fusion_stages,
+            wavelet_mamba_modulation_stages=wavelet_mamba_modulation_stages,
+            wavelet_mamba_spatial_fusion_stages=wavelet_mamba_spatial_fusion_stages,
+            ssm_only_stages=ssm_only_stages,
+            local_mix_stages=local_mix_stages,
+            local_kernel_sizes=local_kernel_sizes)
         
-        self.decoder_level1 = nn.Sequential(*[TransformerBlock(dim=int(dim*2**1), num_heads=heads[0], ffn_expansion_factor=ffn_expansion_factor, bias=bias, LayerNorm_type=LayerNorm_type) for i in range(num_blocks[0])])
+        self.decoder_level1 = build_operator_stage(
+            stage_name='decoder_level1',
+            dim=int(dim*2**1),
+            num_heads=heads[0],
+            num_blocks=num_blocks[0],
+            ffn_expansion_factor=ffn_expansion_factor,
+            bias=bias,
+            layer_norm_type=LayerNorm_type,
+            use_wavelet_mamba=use_wavelet_mamba,
+            use_wavelet_mamba_fusion=use_wavelet_mamba_fusion,
+            use_wavelet_mamba_fusion_anchored=use_wavelet_mamba_fusion_anchored,
+            use_wavelet_mamba_residual_fusion=use_wavelet_mamba_residual_fusion,
+            use_wavelet_mamba_modulation=use_wavelet_mamba_modulation,
+            use_wavelet_mamba_spatial_fusion=use_wavelet_mamba_spatial_fusion,
+            use_ssm_only=use_ssm_only,
+            use_local_mix=use_local_mix,
+            wavelet_mamba_stages=wavelet_mamba_stages,
+            wavelet_mamba_fusion_stages=wavelet_mamba_fusion_stages,
+            wavelet_mamba_fusion_anchored_stages=wavelet_mamba_fusion_anchored_stages,
+            wavelet_mamba_residual_fusion_stages=wavelet_mamba_residual_fusion_stages,
+            wavelet_mamba_modulation_stages=wavelet_mamba_modulation_stages,
+            wavelet_mamba_spatial_fusion_stages=wavelet_mamba_spatial_fusion_stages,
+            ssm_only_stages=ssm_only_stages,
+            local_mix_stages=local_mix_stages,
+            local_kernel_sizes=local_kernel_sizes)
         
-        self.refinement = nn.Sequential(*[TransformerBlock(dim=int(dim*2**1), num_heads=heads[0], ffn_expansion_factor=ffn_expansion_factor, bias=bias, LayerNorm_type=LayerNorm_type) for i in range(num_refinement_blocks)])
+        self.refinement = build_operator_stage(
+            stage_name='refinement',
+            dim=int(dim*2**1),
+            num_heads=heads[0],
+            num_blocks=num_refinement_blocks,
+            ffn_expansion_factor=ffn_expansion_factor,
+            bias=bias,
+            layer_norm_type=LayerNorm_type,
+            use_wavelet_mamba=use_wavelet_mamba,
+            use_wavelet_mamba_fusion=use_wavelet_mamba_fusion,
+            use_wavelet_mamba_residual_fusion=use_wavelet_mamba_residual_fusion,
+            use_wavelet_mamba_modulation=use_wavelet_mamba_modulation,
+            use_wavelet_mamba_spatial_fusion=use_wavelet_mamba_spatial_fusion,
+            use_ssm_only=use_ssm_only,
+            use_local_mix=use_local_mix,
+            wavelet_mamba_stages=wavelet_mamba_stages,
+            wavelet_mamba_fusion_stages=wavelet_mamba_fusion_stages,
+            wavelet_mamba_residual_fusion_stages=wavelet_mamba_residual_fusion_stages,
+            wavelet_mamba_modulation_stages=wavelet_mamba_modulation_stages,
+            wavelet_mamba_spatial_fusion_stages=wavelet_mamba_spatial_fusion_stages,
+            ssm_only_stages=ssm_only_stages,
+            local_mix_stages=local_mix_stages,
+            local_kernel_sizes=local_kernel_sizes)
         
         #### For Dual-Pixel Defocus Deblurring Task ####
         self.dual_pixel_task = dual_pixel_task
@@ -330,6 +720,378 @@ class WTNet(nn.Module):
 
 
         return out_dec_level1
+
+
+class WTNetMamba(WTNet):
+    def __init__(self,
+                 inp_channels=3,
+                 out_channels=3,
+                 dim=40,
+                 num_blocks=[4, 7, 7, 8],
+                 num_refinement_blocks=2,
+                 heads=[1, 1, 1, 1],
+                 ffn_expansion_factor=2.66,
+                 bias=False,
+                 LayerNorm_type='WithBias',
+                 dual_pixel_task=False,
+                 wavelet_mamba_stages=('encoder_level2', 'encoder_level3', 'latent'),
+                 local_kernel_sizes=(3, 5)):
+        super().__init__(
+            inp_channels=inp_channels,
+            out_channels=out_channels,
+            dim=dim,
+            num_blocks=num_blocks,
+            num_refinement_blocks=num_refinement_blocks,
+            heads=heads,
+            ffn_expansion_factor=ffn_expansion_factor,
+            bias=bias,
+            LayerNorm_type=LayerNorm_type,
+            dual_pixel_task=dual_pixel_task,
+            use_wavelet_mamba=True,
+            use_wavelet_mamba_fusion=False,
+            use_wavelet_mamba_modulation=False,
+            use_wavelet_mamba_spatial_fusion=False,
+            use_local_mix=False,
+            wavelet_mamba_stages=wavelet_mamba_stages,
+            local_kernel_sizes=local_kernel_sizes)
+
+
+class WTNetLocalMix(WTNet):
+    def __init__(self,
+                 inp_channels=3,
+                 out_channels=3,
+                 dim=40,
+                 num_blocks=[4, 7, 7, 8],
+                 num_refinement_blocks=2,
+                 heads=[1, 1, 1, 1],
+                 ffn_expansion_factor=2.66,
+                 bias=False,
+                 LayerNorm_type='WithBias',
+                 dual_pixel_task=False,
+                 wavelet_mamba_stages=('encoder_level2', 'encoder_level3', 'latent'),
+                 local_kernel_sizes=(3, 5)):
+        super().__init__(
+            inp_channels=inp_channels,
+            out_channels=out_channels,
+            dim=dim,
+            num_blocks=num_blocks,
+            num_refinement_blocks=num_refinement_blocks,
+            heads=heads,
+            ffn_expansion_factor=ffn_expansion_factor,
+            bias=bias,
+            LayerNorm_type=LayerNorm_type,
+            dual_pixel_task=dual_pixel_task,
+            use_wavelet_mamba=False,
+            use_wavelet_mamba_fusion=False,
+            use_wavelet_mamba_modulation=False,
+            use_wavelet_mamba_spatial_fusion=False,
+            use_ssm_only=False,
+            use_local_mix=True,
+            wavelet_mamba_stages=wavelet_mamba_stages,
+            local_kernel_sizes=local_kernel_sizes)
+
+
+class WTNetSSM(WTNet):
+    def __init__(self,
+                 inp_channels=3,
+                 out_channels=3,
+                 dim=40,
+                 num_blocks=[4, 7, 7, 8],
+                 num_refinement_blocks=2,
+                 heads=[1, 1, 1, 1],
+                 ffn_expansion_factor=2.66,
+                 bias=False,
+                 LayerNorm_type='WithBias',
+                 dual_pixel_task=False,
+                 wavelet_mamba_stages=('encoder_level2', 'encoder_level3', 'latent'),
+                 local_kernel_sizes=(3, 5)):
+        super().__init__(
+            inp_channels=inp_channels,
+            out_channels=out_channels,
+            dim=dim,
+            num_blocks=num_blocks,
+            num_refinement_blocks=num_refinement_blocks,
+            heads=heads,
+            ffn_expansion_factor=ffn_expansion_factor,
+            bias=bias,
+            LayerNorm_type=LayerNorm_type,
+            dual_pixel_task=dual_pixel_task,
+            use_wavelet_mamba=False,
+            use_wavelet_mamba_fusion=False,
+            use_wavelet_mamba_modulation=False,
+            use_wavelet_mamba_spatial_fusion=False,
+            use_ssm_only=True,
+            use_local_mix=False,
+            wavelet_mamba_stages=wavelet_mamba_stages,
+            local_kernel_sizes=local_kernel_sizes)
+
+
+class WTNetMambaFusion(WTNet):
+    def __init__(self,
+                 inp_channels=3,
+                 out_channels=3,
+                 dim=40,
+                 num_blocks=[4, 7, 7, 8],
+                 num_refinement_blocks=2,
+                 heads=[1, 1, 1, 1],
+                 ffn_expansion_factor=2.66,
+                 bias=False,
+                 LayerNorm_type='WithBias',
+                 dual_pixel_task=False,
+                 wavelet_mamba_stages=('encoder_level2', 'encoder_level3', 'latent'),
+                 local_kernel_sizes=(3, 5)):
+        super().__init__(
+            inp_channels=inp_channels,
+            out_channels=out_channels,
+            dim=dim,
+            num_blocks=num_blocks,
+            num_refinement_blocks=num_refinement_blocks,
+            heads=heads,
+            ffn_expansion_factor=ffn_expansion_factor,
+            bias=bias,
+            LayerNorm_type=LayerNorm_type,
+            dual_pixel_task=dual_pixel_task,
+            use_wavelet_mamba=False,
+            use_wavelet_mamba_fusion=True,
+            use_wavelet_mamba_fusion_biased=False,
+            use_wavelet_mamba_fusion_anchored=False,
+            use_wavelet_mamba_residual_fusion=False,
+            use_wavelet_mamba_modulation=False,
+            use_wavelet_mamba_spatial_fusion=False,
+            use_ssm_only=False,
+            use_local_mix=False,
+            wavelet_mamba_stages=wavelet_mamba_stages,
+            local_kernel_sizes=local_kernel_sizes)
+
+
+class WTNetMambaModulated(WTNet):
+    def __init__(self,
+                 inp_channels=3,
+                 out_channels=3,
+                 dim=40,
+                 num_blocks=[4, 7, 7, 8],
+                 num_refinement_blocks=2,
+                 heads=[1, 1, 1, 1],
+                 ffn_expansion_factor=2.66,
+                 bias=False,
+                 LayerNorm_type='WithBias',
+                 dual_pixel_task=False,
+                 wavelet_mamba_stages=('encoder_level2', 'encoder_level3', 'latent'),
+                 local_kernel_sizes=(3, 5)):
+        super().__init__(
+            inp_channels=inp_channels,
+            out_channels=out_channels,
+            dim=dim,
+            num_blocks=num_blocks,
+            num_refinement_blocks=num_refinement_blocks,
+            heads=heads,
+            ffn_expansion_factor=ffn_expansion_factor,
+            bias=bias,
+            LayerNorm_type=LayerNorm_type,
+            dual_pixel_task=dual_pixel_task,
+            use_wavelet_mamba=False,
+            use_wavelet_mamba_fusion=False,
+            use_wavelet_mamba_fusion_biased=False,
+            use_wavelet_mamba_fusion_anchored=False,
+            use_wavelet_mamba_residual_fusion=False,
+            use_wavelet_mamba_modulation=True,
+            use_wavelet_mamba_spatial_fusion=False,
+            use_ssm_only=False,
+            use_local_mix=False,
+            wavelet_mamba_stages=wavelet_mamba_stages,
+            local_kernel_sizes=local_kernel_sizes)
+
+
+class WTNetMambaSpatialFusion(WTNet):
+    def __init__(self,
+                 inp_channels=3,
+                 out_channels=3,
+                 dim=40,
+                 num_blocks=[4, 7, 7, 8],
+                 num_refinement_blocks=2,
+                 heads=[1, 1, 1, 1],
+                 ffn_expansion_factor=2.66,
+                 bias=False,
+                 LayerNorm_type='WithBias',
+                 dual_pixel_task=False,
+                 wavelet_mamba_stages=('encoder_level2', 'encoder_level3', 'latent'),
+                 local_kernel_sizes=(3, 5)):
+        super().__init__(
+            inp_channels=inp_channels,
+            out_channels=out_channels,
+            dim=dim,
+            num_blocks=num_blocks,
+            num_refinement_blocks=num_refinement_blocks,
+            heads=heads,
+            ffn_expansion_factor=ffn_expansion_factor,
+            bias=bias,
+            LayerNorm_type=LayerNorm_type,
+            dual_pixel_task=dual_pixel_task,
+            use_wavelet_mamba=False,
+            use_wavelet_mamba_fusion=False,
+            use_wavelet_mamba_fusion_biased=False,
+            use_wavelet_mamba_fusion_anchored=False,
+            use_wavelet_mamba_residual_fusion=False,
+            use_wavelet_mamba_modulation=False,
+            use_wavelet_mamba_spatial_fusion=True,
+            use_ssm_only=False,
+            use_local_mix=False,
+            wavelet_mamba_stages=wavelet_mamba_stages,
+            local_kernel_sizes=local_kernel_sizes)
+
+
+class WTNetMambaSelectiveFusion(WTNet):
+    def __init__(self,
+                 inp_channels=3,
+                 out_channels=3,
+                 dim=40,
+                 num_blocks=[4, 7, 7, 8],
+                 num_refinement_blocks=2,
+                 heads=[1, 1, 1, 1],
+                 ffn_expansion_factor=2.66,
+                 bias=False,
+                 LayerNorm_type='WithBias',
+                 dual_pixel_task=False,
+                 fusion_stages=('encoder_level3', 'latent'),
+                 ssm_stages=('encoder_level2',),
+                 local_kernel_sizes=(3, 5)):
+        super().__init__(
+            inp_channels=inp_channels,
+            out_channels=out_channels,
+            dim=dim,
+            num_blocks=num_blocks,
+            num_refinement_blocks=num_refinement_blocks,
+            heads=heads,
+            ffn_expansion_factor=ffn_expansion_factor,
+            bias=bias,
+            LayerNorm_type=LayerNorm_type,
+            dual_pixel_task=dual_pixel_task,
+            use_wavelet_mamba=False,
+            use_wavelet_mamba_fusion=True,
+            use_wavelet_mamba_fusion_biased=False,
+            use_wavelet_mamba_fusion_anchored=False,
+            use_wavelet_mamba_residual_fusion=False,
+            use_wavelet_mamba_modulation=False,
+            use_wavelet_mamba_spatial_fusion=False,
+            use_ssm_only=True,
+            use_local_mix=False,
+            wavelet_mamba_fusion_stages=fusion_stages,
+            ssm_only_stages=ssm_stages,
+            local_kernel_sizes=local_kernel_sizes)
+
+
+class WTNetMambaResidualFusion(WTNet):
+    def __init__(self,
+                 inp_channels=3,
+                 out_channels=3,
+                 dim=40,
+                 num_blocks=[4, 7, 7, 8],
+                 num_refinement_blocks=2,
+                 heads=[1, 1, 1, 1],
+                 ffn_expansion_factor=2.66,
+                 bias=False,
+                 LayerNorm_type='WithBias',
+                 dual_pixel_task=False,
+                 wavelet_mamba_stages=('encoder_level2', 'encoder_level3', 'latent'),
+                 local_kernel_sizes=(3, 5)):
+        super().__init__(
+            inp_channels=inp_channels,
+            out_channels=out_channels,
+            dim=dim,
+            num_blocks=num_blocks,
+            num_refinement_blocks=num_refinement_blocks,
+            heads=heads,
+            ffn_expansion_factor=ffn_expansion_factor,
+            bias=bias,
+            LayerNorm_type=LayerNorm_type,
+            dual_pixel_task=dual_pixel_task,
+            use_wavelet_mamba=False,
+            use_wavelet_mamba_fusion=False,
+            use_wavelet_mamba_fusion_biased=False,
+            use_wavelet_mamba_fusion_anchored=False,
+            use_wavelet_mamba_residual_fusion=True,
+            use_wavelet_mamba_modulation=False,
+            use_wavelet_mamba_spatial_fusion=False,
+            use_ssm_only=False,
+            use_local_mix=False,
+            wavelet_mamba_stages=wavelet_mamba_stages,
+            local_kernel_sizes=local_kernel_sizes)
+
+
+class WTNetMambaFusionAnchored(WTNet):
+    def __init__(self,
+                 inp_channels=3,
+                 out_channels=3,
+                 dim=40,
+                 num_blocks=[4, 7, 7, 8],
+                 num_refinement_blocks=2,
+                 heads=[1, 1, 1, 1],
+                 ffn_expansion_factor=2.66,
+                 bias=False,
+                 LayerNorm_type='WithBias',
+                 dual_pixel_task=False,
+                 wavelet_mamba_stages=('encoder_level2', 'encoder_level3', 'latent'),
+                 local_kernel_sizes=(3, 5)):
+        super().__init__(
+            inp_channels=inp_channels,
+            out_channels=out_channels,
+            dim=dim,
+            num_blocks=num_blocks,
+            num_refinement_blocks=num_refinement_blocks,
+            heads=heads,
+            ffn_expansion_factor=ffn_expansion_factor,
+            bias=bias,
+            LayerNorm_type=LayerNorm_type,
+            dual_pixel_task=dual_pixel_task,
+            use_wavelet_mamba=False,
+            use_wavelet_mamba_fusion=False,
+            use_wavelet_mamba_fusion_biased=False,
+            use_wavelet_mamba_fusion_anchored=True,
+            use_wavelet_mamba_residual_fusion=False,
+            use_wavelet_mamba_modulation=False,
+            use_wavelet_mamba_spatial_fusion=False,
+            use_ssm_only=False,
+            use_local_mix=False,
+            wavelet_mamba_stages=wavelet_mamba_stages,
+            local_kernel_sizes=local_kernel_sizes)
+
+
+class WTNetMambaFusionBiased(WTNet):
+    def __init__(self,
+                 inp_channels=3,
+                 out_channels=3,
+                 dim=40,
+                 num_blocks=[4, 7, 7, 8],
+                 num_refinement_blocks=2,
+                 heads=[1, 1, 1, 1],
+                 ffn_expansion_factor=2.66,
+                 bias=False,
+                 LayerNorm_type='WithBias',
+                 dual_pixel_task=False,
+                 wavelet_mamba_stages=('encoder_level2', 'encoder_level3', 'latent'),
+                 local_kernel_sizes=(3, 5)):
+        super().__init__(
+            inp_channels=inp_channels,
+            out_channels=out_channels,
+            dim=dim,
+            num_blocks=num_blocks,
+            num_refinement_blocks=num_refinement_blocks,
+            heads=heads,
+            ffn_expansion_factor=ffn_expansion_factor,
+            bias=bias,
+            LayerNorm_type=LayerNorm_type,
+            dual_pixel_task=dual_pixel_task,
+            use_wavelet_mamba=False,
+            use_wavelet_mamba_fusion=False,
+            use_wavelet_mamba_fusion_biased=True,
+            use_wavelet_mamba_fusion_anchored=False,
+            use_wavelet_mamba_residual_fusion=False,
+            use_wavelet_mamba_modulation=False,
+            use_wavelet_mamba_spatial_fusion=False,
+            use_ssm_only=False,
+            use_local_mix=False,
+            wavelet_mamba_stages=wavelet_mamba_stages,
+            local_kernel_sizes=local_kernel_sizes)
 
 if __name__ == '__main__':
     from fvcore.nn import FlopCountAnalysis
