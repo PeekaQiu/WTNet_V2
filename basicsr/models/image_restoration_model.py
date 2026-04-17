@@ -8,7 +8,7 @@ import glob
 
 from basicsr.models.archs import define_network
 from basicsr.models.base_model import BaseModel
-from basicsr.utils import get_root_logger, imwrite, tensor2img
+from basicsr.utils import get_root_logger, imwrite, tensor2img, release_device_memory
 
 loss_module = importlib.import_module('basicsr.models.losses')
 metric_module = importlib.import_module('basicsr.metrics')
@@ -197,6 +197,7 @@ class ImageCleanModel(BaseModel):
         self.amp_scaler.update()
 
         self.log_dict = self.reduce_loss_dict(loss_dict)
+        del preds, loss_dict, l_pix
 
         if self.ema_decay > 0:
             self.model_ema(decay=self.ema_decay)
@@ -274,8 +275,7 @@ class ImageCleanModel(BaseModel):
             # tentative for out of GPU memory
             del self.lq
             del self.output
-            if self.device.type == 'cuda':
-                torch.cuda.empty_cache()
+            release_device_memory(self.device)
 
             if save_img:
 
@@ -315,6 +315,11 @@ class ImageCleanModel(BaseModel):
                             metric_module, metric_type)(visuals['result'], visuals['gt'], **opt_)
 
             cnt += 1
+            del visuals, sr_img
+            if 'gt_img' in locals():
+                del gt_img
+            if idx % 10 == 0:
+                release_device_memory(self.device)
 
         current_metric = 0.
         if with_metrics:
@@ -324,6 +329,7 @@ class ImageCleanModel(BaseModel):
 
             self._log_validation_metric_values(current_iter, dataset_name,
                                                tb_logger)
+        release_device_memory(self.device)
         return current_metric
 
     def _log_validation_metric_values(self, current_iter, dataset_name,

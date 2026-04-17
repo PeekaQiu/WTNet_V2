@@ -1,5 +1,6 @@
 import argparse
 import datetime
+import gc
 import logging
 import math
 import os
@@ -16,7 +17,8 @@ from basicsr.models import create_model
 from basicsr.utils import (MessageLogger, check_resume, get_env_info,
                            get_root_logger, get_time_str, init_tb_logger,
                            init_wandb_logger, make_exp_dirs, mkdir_and_rename,
-                           set_random_seed, get_torch_device)
+                           set_random_seed, get_torch_device,
+                           release_device_memory)
 from basicsr.utils.dist_util import get_dist_info, init_dist
 from basicsr.utils.misc import mkdir_and_rename2
 from basicsr.utils.options import dict2str, parse
@@ -175,8 +177,12 @@ def main():
     if opt['path'].get('resume_state'):
         map_location = device if device.type != 'cuda' else (
             lambda storage, loc: storage.cuda(torch.cuda.current_device()))
-        resume_state = torch.load(opt['path']['resume_state'],
-                                  map_location=map_location)
+        # Training state files contain optimizer/scheduler/python objects, so
+        # they must be loaded with weights_only disabled on newer PyTorch.
+        resume_state = torch.load(
+            opt['path']['resume_state'],
+            map_location=map_location,
+            weights_only=False)
     else:
         resume_state = None
 
@@ -306,6 +312,9 @@ def main():
             # print(lq.shape)
             model.feed_train_data({'lq': lq, 'gt': gt})
             model.optimize_parameters(current_iter)
+            del lq, gt
+            if current_iter % opt['logger']['print_freq'] == 0:
+                release_device_memory(device)
 
             iter_time = time.time() - iter_time
             # log
@@ -346,12 +355,14 @@ def main():
                     for k, v in opt['val']['metrics'].items():  # best_psnr
                         tb_logger.add_scalar(
                             f'metrics/best_{k}', best_metric[k], current_iter)
+                release_device_memory(device)
 
             data_time = time.time()
             iter_time = time.time()
             train_data = prefetcher.next()
         # end of iter
         epoch += 1
+        release_device_memory(device)
 
     # end of epoch
 
@@ -363,8 +374,10 @@ def main():
     if opt.get('val') is not None:
         model.validation(val_loader, current_iter, tb_logger,
                          opt['val']['save_img'])
+        release_device_memory(device)
     if tb_logger:
         tb_logger.close()
+    gc.collect()
 
 
 if __name__ == '__main__':

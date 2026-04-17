@@ -1,4 +1,5 @@
 from asyncio.log import logger
+import gc
 import numpy as np
 import os
 import random
@@ -39,6 +40,25 @@ def get_torch_device(preferred_device=None, num_gpu=0):
     if num_gpu != 0 and torch.cuda.is_available():
         return torch.device('cuda')
     return torch.device('cpu')
+
+
+def release_device_memory(device=None):
+    """Best-effort GC and backend cache release."""
+    gc.collect()
+
+    if device is None:
+        return
+
+    if isinstance(device, str):
+        device = torch.device(device)
+
+    if device.type == 'cuda' and torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    elif device.type == 'mps' and hasattr(torch, 'mps'):
+        try:
+            torch.mps.empty_cache()
+        except Exception:
+            pass
 
 
 def get_time_str():
@@ -205,8 +225,20 @@ def check_resume(opt, resume_iter):
             basename = network.replace('network_', '')
             if opt['path'].get('ignore_resume_networks') is None or (
                     basename not in opt['path']['ignore_resume_networks']):
+                model_root = opt['path']['models']
+                resume_state_path = opt['path'].get('resume_state')
+                if resume_state_path:
+                    # When resuming into a new experiment directory, reuse the
+                    # network checkpoint colocated with the original state file.
+                    candidate_root = osp.join(
+                        osp.dirname(osp.dirname(resume_state_path)), 'models')
+                    candidate_path = osp.join(
+                        candidate_root, f'net_{basename}_{resume_iter}.pth')
+                    if osp.exists(candidate_path):
+                        model_root = candidate_root
+
                 opt['path'][name] = osp.join(
-                    opt['path']['models'], f'net_{basename}_{resume_iter}.pth')
+                    model_root, f'net_{basename}_{resume_iter}.pth')
                 logger.info(f"Set {name} to {opt['path'][name]}")
 
 

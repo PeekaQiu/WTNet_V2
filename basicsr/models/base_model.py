@@ -357,7 +357,24 @@ class BaseModel():
         for i, o in enumerate(resume_optimizers):
             self.optimizers[i].load_state_dict(o)
         for i, s in enumerate(resume_schedulers):
-            self.schedulers[i].load_state_dict(s)
+            scheduler = self.schedulers[i]
+            preserved_attrs = {}
+            for attr in ('periods', 'restart_weights', 'eta_mins',
+                         'cumulative_period'):
+                if hasattr(scheduler, attr):
+                    preserved_attrs[attr] = deepcopy(getattr(scheduler, attr))
+
+            scheduler.load_state_dict(s)
+
+            # Keep runtime progress from the checkpoint, but allow continuation
+            # configs to redefine scheduler segments for extra training rounds.
+            for attr, value in preserved_attrs.items():
+                setattr(scheduler, attr, value)
+            if 'periods' in preserved_attrs:
+                scheduler.cumulative_period = [
+                    sum(scheduler.periods[0:j + 1])
+                    for j in range(len(scheduler.periods))
+                ]
 
         # resume amp scaler
         if self.opt['is_train'] and self.opt.get('use_amp', False):
