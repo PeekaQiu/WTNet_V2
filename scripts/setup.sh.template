@@ -1,0 +1,52 @@
+#!/bin/bash
+
+BASE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+WTNET_FILE="$BASE_DIR/wtnet.sqsh"
+WTNET_URL="https://hkustconnect-my.sharepoint.com/:u:/g/personal/jshibo_connect_ust_hk/IQDSnfuIW3VDS6qwFIHxPl_UAXP1Bim2gRkQASdKYYeupwU?download=1"
+
+DATA_ZIP="$BASE_DIR/5302_datasets.zip"
+DATA_TARGET_DIR="$HOME/5302/5302_datasets"
+DATA_URL="https://hkustconnect-my.sharepoint.com/:u:/g/personal/jqiuar_connect_ust_hk/IQCMWTbmYZ_9TqN3w26NBDCqAe8wy0MQhK6CMpC3wg8uaK8?download=1"
+
+if [ -f "$DATA_ZIP" ]; then
+    unzip -t "$DATA_ZIP" > /dev/null 2>&1
+    if [ $? -ne 0 ]; then
+        rm -f "$DATA_ZIP"
+    fi
+fi
+
+if [ ! -s "$WTNET_FILE" ]; then
+    if command -v wget > /dev/null; then
+        wget -q --show-progress -O "$WTNET_FILE" "$WTNET_URL"
+    else
+        curl -L "$WTNET_URL" --progress-bar -o "$WTNET_FILE"
+    fi
+fi
+
+if [ ! -s "$DATA_ZIP" ]; then
+    if command -v wget > /dev/null; then
+        wget -q --show-progress -O "$DATA_ZIP" "$DATA_URL"
+    else
+        curl -L "$DATA_URL" --progress-bar -o "$DATA_ZIP"
+    fi
+fi
+
+if [ ! -s "$DATA_ZIP" ] || [ $(stat -c%s "$DATA_ZIP") -lt 10000 ]; then
+    rm -f "$DATA_ZIP"
+    exit 1
+fi
+
+mkdir -p "$DATA_TARGET_DIR"
+
+if [ -z "$(ls -A "$DATA_TARGET_DIR" 2>/dev/null)" ]; then
+    if command -v unzip > /dev/null; then
+        unzip -o "$DATA_ZIP" -d "$DATA_TARGET_DIR"
+        if [ $? -ne 0 ]; then
+            exit 1
+        fi
+    else
+        exit 1
+    fi
+fi
+
+exit 0

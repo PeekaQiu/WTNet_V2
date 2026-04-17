@@ -1,0 +1,23 @@
+#!/bin/bash
+#SBATCH --job-name=train_wtnet
+#SBATCH --output=logs/train_cec_%j.out
+#SBATCH --error=logs/train_cec_%j.err
+#SBATCH --account=mscaisuperpod
+#SBATCH --partition=normal
+#SBATCH --gpus=1
+#SBATCH --cpus-per-task=8
+#SBATCH --time=08:00:00
+
+mkdir -p logs
+
+srun --account=mscaisuperpod --partition=normal --gpus=1 \
+     --container-image="/home/[user]/5302/WTNet/scripts/wtnet.sqsh" \
+     --container-mounts="home/[user]/5302/WTNet:/workspace" \
+     --no-container-mount-home \
+     bash -c "export PYTHONPATH=/workspace:\$PYTHONPATH && python3 train.py --opt ./Options/[prefix].yml"
+
+#srun --account=mscaisuperpod --partition=normal --gpus=1 \
+#     --container-image="/home/jqiuar/5302/WTNet/scripts/wtnet.sqsh" \
+#     --container-mounts="/home/jqiuar/5302/WTNet:/workspace" \
+#     --no-container-mount-home \
+#     bash -c "export PYTHONPATH=/workspace:\$PYTHONPATH && python3 train.py --opt ./Options/WTNet_CEC.yml"

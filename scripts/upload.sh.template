@@ -1,0 +1,2 @@
+rsync -avz --exclude='.git/' --exclude='.git/**' --include='.*' --exclude='node_modules/' --exclude='__pycache__/' --exclude='.DS_Store' . [user]@superpod.ust.hk:/home/[user]/[path]/WTNet --progress
+# rsync -avz --exclude='.git/' --exclude='.git/**' --include='.*' --exclude='__pycache__/' --exclude='.DS_Store' . jqiuar@superpod.ust.hk:/home/jqiuar/5302/WTNet

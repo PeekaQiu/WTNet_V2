@@ -1,0 +1,2 @@
+rsync -avz --exclude='__pycache__/' [user]@superpod.ust.hk:/home/[user]/[path] . --progress
+# rsync -avz --exclude='__pycache__/' jqiuar@superpod.ust.hk:/home/jqiuar/5302/WTNet/ . --progress
