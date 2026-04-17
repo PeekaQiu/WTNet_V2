@@ -112,8 +112,10 @@ class BaseModel():
         elif scheduler_type == 'TrueCosineAnnealingLR':
             print('..', 'cosineannealingLR')
             for optimizer in self.optimizers:
+                scheduler_opt = deepcopy(train_opt['scheduler'])
+                scheduler_opt.setdefault('T_max', train_opt['total_iter'])
                 self.schedulers.append(
-                    torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, **train_opt['scheduler']))
+                    torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, **scheduler_opt))
         elif scheduler_type == 'CosineAnnealingLRWithRestart':
             print('..', 'CosineAnnealingLR_With_Restart')
             for optimizer in self.optimizers:

@@ -239,7 +239,7 @@ class ImageCleanModel(BaseModel):
         if os.environ['LOCAL_RANK'] == '0':
             return self.nondist_validation(dataloader, current_iter, tb_logger, save_img, rgb2bgr, use_image)
         else:
-            return 0.
+            return None
 
     def nondist_validation(self, dataloader, current_iter, tb_logger,
                            save_img, rgb2bgr, use_image):
@@ -321,16 +321,16 @@ class ImageCleanModel(BaseModel):
             if idx % 10 == 0:
                 release_device_memory(self.device)
 
-        current_metric = 0.
         if with_metrics:
             for metric in self.metric_results.keys():
                 self.metric_results[metric] /= cnt
-                current_metric = self.metric_results[metric]
 
             self._log_validation_metric_values(current_iter, dataset_name,
                                                tb_logger)
         release_device_memory(self.device)
-        return current_metric
+        if with_metrics:
+            return deepcopy(self.metric_results)
+        return None
 
     def _log_validation_metric_values(self, current_iter, dataset_name,
                                       tb_logger):

@@ -73,10 +73,15 @@ def init_loggers(opt):
                         f"metric.csv")
     logger_metric = get_root_logger(logger_name='metric',
                                     log_level=logging.INFO, log_file=log_file)
-    metric_str = f'iter ({get_time_str()})'
-    for k, v in opt['val']['metrics'].items():
-        metric_str += f',{k}'
+    metric_keys = list(opt['val']['metrics'].keys())
+    metric_str = 'epoch,iter,' + ','.join(metric_keys)
     logger_metric.info(metric_str)
+
+    checkpoint_metric_file = osp.join(opt['path']['log'], 'checkpoint_metrics.csv')
+    logger_checkpoint = get_root_logger(
+        logger_name='checkpoint_metric', log_level=logging.INFO, log_file=checkpoint_metric_file)
+    checkpoint_str = 'epoch,iter,checkpoint,' + ','.join(metric_keys)
+    logger_checkpoint.info(checkpoint_str)
 
     logger.info(get_env_info())
     logger.info(dict2str(opt))
@@ -119,8 +124,13 @@ def create_train_val_dataloader(opt, logger):  #train loader 和 val loader 一�
             num_iter_per_epoch = math.ceil(
                 len(train_set) * dataset_enlarge_ratio /
                 (dataset_opt['batch_size_per_gpu'] * opt['world_size']))  #一个epoch遍历一次数据
-            total_iters = int(opt['train']['total_iter'])
-            total_epochs = math.ceil(total_iters / (num_iter_per_epoch)) #一个iteration就是一次 inference + backward，总的iteration是不变的
+            configured_total_epochs = opt['train'].get('total_epochs')
+            if configured_total_epochs is not None:
+                total_epochs = int(configured_total_epochs)
+                total_iters = total_epochs * num_iter_per_epoch
+            else:
+                total_iters = int(opt['train']['total_iter'])
+                total_epochs = math.ceil(total_iters / (num_iter_per_epoch)) #一个iteration就是一次 inference + backward，总的iteration是不变的
             logger.info(
                 'Training statistics:'
                 f'\n\tNumber of train images: {len(train_set)}'
@@ -146,7 +156,7 @@ def create_train_val_dataloader(opt, logger):  #train loader 和 val loader 一�
         else:
             raise ValueError(f'Dataset phase {phase} is not recognized.')
 
-    return train_loader, train_sampler, val_loader, total_epochs, total_iters
+    return train_loader, train_sampler, val_loader, total_epochs, total_iters, num_iter_per_epoch
 
 
 def main():
@@ -194,12 +204,34 @@ def main():
             mkdir_and_rename2(
                 osp.join('tb_logger', opt['name']), opt['rename_flag'])
 
-    # initialize loggers
-    logger, tb_logger = init_loggers(opt)
-
     # create train and validation dataloaders
+    logger, tb_logger = init_loggers(opt)
     result = create_train_val_dataloader(opt, logger)
-    train_loader, train_sampler, val_loader, total_epochs, total_iters = result
+    train_loader, train_sampler, val_loader, total_epochs, total_iters, num_iter_per_epoch = result
+
+    configured_total_epochs = opt['train'].get('total_epochs')
+    if configured_total_epochs is not None:
+        total_epochs = int(configured_total_epochs)
+        total_iters = total_epochs * num_iter_per_epoch
+        opt['train']['total_iter'] = total_iters
+        logger.info(
+            f'Using epoch-driven schedule: total_epochs={total_epochs}, '
+            f'num_iter_per_epoch={num_iter_per_epoch}, total_iters={total_iters}.')
+
+    save_freq_in_epoch = opt['logger'].get('save_checkpoint_freq_in_epoch')
+    if save_freq_in_epoch is not None:
+        opt['logger']['save_checkpoint_freq'] = max(1, int(save_freq_in_epoch) * num_iter_per_epoch)
+        logger.info(
+            f'Checkpoint frequency set to every {save_freq_in_epoch} epochs '
+            f'({opt["logger"]["save_checkpoint_freq"]} iterations).')
+
+    if opt.get('val') is not None:
+        val_freq_in_epoch = opt['val'].get('val_freq_in_epoch')
+        if val_freq_in_epoch is not None:
+            opt['val']['val_freq'] = max(1, int(val_freq_in_epoch) * num_iter_per_epoch)
+            logger.info(
+                f'Validation frequency set to every {val_freq_in_epoch} epochs '
+                f'({opt["val"]["val_freq"]} iterations).')
 
     # create model
     if resume_state:  # resume training
@@ -336,17 +368,21 @@ def main():
                 rgb2bgr = opt['val'].get('rgb2bgr', True)
                 # wheather use uint8 image to compute metrics
                 use_image = opt['val'].get('use_image', True)
-                current_metric = model.validation(val_loader, current_iter, tb_logger,
-                                                  opt['val']['save_img'], rgb2bgr, use_image)
+                current_metrics = model.validation(val_loader, current_iter, tb_logger,
+                                                   opt['val']['save_img'], rgb2bgr, use_image)
                 # log cur metric to csv file
                 logger_metric = get_root_logger(logger_name='metric')
-                metric_str = f'{current_iter},{current_metric}'
+                metric_str = f'{epoch},{current_iter}'
+                for metric_name in opt['val']['metrics'].keys():
+                    metric_value = current_metrics[metric_name]
+                    metric_str += f',{metric_value}'
                 logger_metric.info(metric_str)
 
                 # log best metric
-                if best_metric['psnr'] < current_metric:
-                    best_metric['psnr'] = current_metric
-                    # save best model
+                key_metric = opt['val'].get('key_metric', 'psnr')
+                if best_metric[key_metric] < current_metrics[key_metric]:
+                    for metric_name, metric_value in current_metrics.items():
+                        best_metric[metric_name] = metric_value
                     best_metric['iter'] = current_iter
                     model.save_best(best_metric)
                 if tb_logger:
@@ -355,6 +391,14 @@ def main():
                     for k, v in opt['val']['metrics'].items():  # best_psnr
                         tb_logger.add_scalar(
                             f'metrics/best_{k}', best_metric[k], current_iter)
+
+                if current_iter % opt['logger']['save_checkpoint_freq'] == 0:
+                    logger_checkpoint = get_root_logger(logger_name='checkpoint_metric')
+                    checkpoint_name = f'net_g_{current_iter}.pth'
+                    checkpoint_str = f'{epoch},{current_iter},{checkpoint_name}'
+                    for metric_name in opt['val']['metrics'].keys():
+                        checkpoint_str += f',{current_metrics[metric_name]}'
+                    logger_checkpoint.info(checkpoint_str)
                 release_device_memory(device)
 
             data_time = time.time()
