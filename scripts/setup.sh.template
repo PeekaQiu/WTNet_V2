@@ -6,7 +6,7 @@ WTNET_URL="https://hkustconnect-my.sharepoint.com/:u:/g/personal/jshibo_connect_
 
 DATA_ZIP="$BASE_DIR/5302_datasets.zip"
 DATA_TARGET_DIR="$HOME/5302/5302_datasets"
-DATA_URL="https://hkustconnect-my.sharepoint.com/:u:/g/personal/jqiuar_connect_ust_hk/IQCMWTbmYZ_9TqN3w26NBDCqAe8wy0MQhK6CMpC3wg8uaK8?download=1"
+DATA_URL="https://hkustconnect-my.sharepoint.com/:u:/g/personal/jqiuar_connect_ust_hk/IQDEfgPhh037SZqHh2tsn7_AAVMLTXSpUgb5SBzQl5kcY_M?e=5uC9Pk"
 
 if [ -f "$DATA_ZIP" ]; then
     unzip -t "$DATA_ZIP" > /dev/null 2>&1
