@@ -9,8 +9,8 @@ datasets:
   train:
     name: CECTrain
     type: Dataset_PairedImage
-    dataroot_gt: /home/[user]/5302/5302_datasets/CEC_Dataset/train/clean
-    dataroot_lq: /home/[user]/5302/5302_datasets/Endo4IE/train/corrupted
+    dataroot_gt: /home/jqiuar/5302/5302_datasets/CEC_Dataset/train/clean
+    dataroot_lq: /home/jqiuar/5302/5302_datasets/Endo4IE/train/corrupted
     io_backend:
       type: disk
     filename_tmpl: '{}'
