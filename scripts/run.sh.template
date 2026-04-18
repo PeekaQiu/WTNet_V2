@@ -12,12 +12,12 @@ mkdir -p logs
 
 srun --account=mscaisuperpod --partition=normal --gpus=1 \
      --container-image="/home/[user]/5302/WTNet/scripts/wtnet.sqsh" \
-     --container-mounts="home/[user]/5302/WTNet:/workspace" \
+     --container-mounts="/home/[user]/5302/WTNet:/workspace" \
      --no-container-mount-home \
-     bash -c "export PYTHONPATH=/workspace:\$PYTHONPATH && python3 train.py --opt ./Options/[prefix].yml"
+     bash -c "cd /workspace && export PYTHONPATH=/workspace:\$PYTHONPATH && python3 basicsr/train.py --opt Options/[prefix].yml"
 
 #srun --account=mscaisuperpod --partition=normal --gpus=1 \
 #     --container-image="/home/jqiuar/5302/WTNet/scripts/wtnet.sqsh" \
 #     --container-mounts="/home/jqiuar/5302/WTNet:/workspace" \
 #     --no-container-mount-home \
-#     bash -c "export PYTHONPATH=/workspace:\$PYTHONPATH && python3 train.py --opt ./Options/WTNet_CEC.yml"
+#     bash -c "cd /workspace && export PYTHONPATH=/workspace:\$PYTHONPATH && python3 basicsr/train.py --opt Options/WTNet_CEC.yml"
