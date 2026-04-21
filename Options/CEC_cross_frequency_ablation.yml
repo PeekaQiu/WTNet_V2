@@ -1,0 +1,102 @@
+name: CEC_cross_frequency_ablation
+model_type: ImageCleanModel
+scale: 1
+num_gpu: 1
+manual_seed: 3407
+use_amp: false
+
+datasets:
+  train:
+    name: CECTrain
+    type: Dataset_PairedImage
+    dataroot_gt: /home/jqiuar/5302/5302_datasets/CEC_Dataset/train/clean
+    dataroot_lq: /home/jqiuar/5302/5302_datasets/CEC_Dataset/train/corrupted
+    io_backend:
+      type: disk
+    filename_tmpl: '{}'
+    geometric_augs: true
+    use_shuffle: true
+    batch_size_per_gpu: 8
+    num_worker_per_gpu: 8
+    pin_memory: true
+    prefetch_mode: cpu
+    dataset_enlarge_ratio: 1
+    mini_batch_sizes: [8]
+    iters: [10000]
+    gt_size: 256
+    gt_sizes: [256]
+  val:
+    name: CECVal
+    type: Dataset_PairedImage
+    dataroot_gt: /home/jqiuar/5302/5302_datasets/CEC_Dataset/test/clean
+    dataroot_lq: /home/jqiuar/5302/5302_datasets/CEC_Dataset/test/corrupted
+    io_backend:
+      type: disk
+    filename_tmpl: '{}'
+
+network_g:
+  type: WTNet
+  inp_channels: 3
+  out_channels: 3
+  dim: 40
+  num_blocks: [4, 7, 7, 8]
+  num_refinement_blocks: 2
+  heads: [1, 1, 1, 1]
+  ffn_expansion_factor: 2.66
+  bias: false
+  LayerNorm_type: WithBias
+  dual_pixel_task: false
+  use_input_calibration: true
+  cross_frequency_interaction: true
+
+path:
+  pretrain_network_g: ~
+  strict_load_g: true
+  resume_state: ~
+  param_key: params
+  auto_resume: false
+
+train:
+  total_iter: 10000
+  warmup_iter: -1
+  use_grad_clip: true
+  ema_decay: 0
+  mixing_augs:
+    mixup: false
+    mixup_beta: 1.2
+    use_identity: false
+  pixel_opt:
+    type: CharbonnierLoss
+    loss_weight: 1.0
+    reduction: mean
+  optim_g:
+    type: AdamW
+    lr: !!float 2e-4
+    betas: [0.9, 0.999]
+    weight_decay: 0
+  scheduler:
+    type: TrueCosineAnnealingLR
+    T_max: 10000
+    eta_min: !!float 1e-6
+
+val:
+  window_size: 8
+  val_freq: 10
+  save_img: false
+  rgb2bgr: true
+  use_image: true
+  key_metric: psnr
+  metrics:
+    psnr:
+      type: calculate_psnr
+      crop_border: 0
+      test_y_channel: false
+    ssim:
+      type: calculate_ssim
+      crop_border: 0
+      test_y_channel: false
+
+logger:
+  print_freq: 10
+  save_checkpoint_freq: 1000
+  use_tb_logger: true

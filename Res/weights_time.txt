@@ -1,0 +1,3 @@
+cross frequency: 14M
+base: 13M
+ecm: 13M

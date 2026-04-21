@@ -36,3 +36,5 @@ tmp/
 
 scripts/wtnet.sqsh
 scripts/*.sh
+
+docs
