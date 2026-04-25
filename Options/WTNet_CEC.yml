@@ -74,7 +74,8 @@ path:
 
 # training settings
 train:
-  total_iter: 150000
+  # total_iter: 150000
+  total_iter: 10000
   warmup_iter: -1 # no warm up
   use_grad_clip: true
 
@@ -123,11 +124,17 @@ val:
       type: calculate_psnr
       crop_border: 0
       test_y_channel: false
+    ssim:
+      type: calculate_ssim
+      crop_border: 0
+      test_y_channel: false
 
 # logging settings
 logger:
-  print_freq: 500
-  save_checkpoint_freq: !!float 5e3
+  # print_freq: 500
+  print_freq: 10
+  # save_checkpoint_freq: !!float 5e3
+  save_checkpoint_freq: 1000
   use_tb_logger: true
   wandb:
     project: low_light
