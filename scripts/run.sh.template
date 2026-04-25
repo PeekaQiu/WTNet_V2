@@ -11,10 +11,15 @@
 mkdir -p logs
 
 srun --account=mscaisuperpod --partition=normal --gpus=1 \
-     --container-image="/home/[user]/5302/WTNet/scripts/wtnet.sqsh" \
-     --container-mounts="home/[user]/5302/WTNet:/workspace" \
+     --container-image="/home/ldingaj/project/mia/WTNet_V2/scripts/wtnet.sqsh" \
+     --container-mounts="/home/ldingaj/project/mia/WTNet_V2:/workspace" \
      --no-container-mount-home \
-     bash -c "export PYTHONPATH=/workspace:\$PYTHONPATH && python3 train.py --opt ./Options/[prefix].yml"
+     bash -c "cd /workspace && \
+              export PYTHONPATH=/workspace:${PYTHONPATH:-}; \
+              export PYTHONUSERBASE=/workspace/.python-user-base; \
+              export PATH=\$PYTHONUSERBASE/bin:\$PATH; \
+              python3 -m pip install --no-cache-dir --user -q ptwt==0.1.2; \
+              python3 basicsr/train.py --opt ./Options/WTNet_CEC.yml"
 
 #srun --account=mscaisuperpod --partition=normal --gpus=1 \
 #     --container-image="/home/jqiuar/5302/WTNet/scripts/wtnet.sqsh" \

@@ -10,7 +10,8 @@ from pdb import set_trace as stx
 import numbers
 
 from einops import rearrange
-from pytorch_wavelets import DWTForward, DWTInverse
+from .learnable_wavelet import (LearnableDWTForward, LearnableDWTInverse,
+                                create_learnable_wavelet)
 
 
 ##########################################################################
@@ -216,6 +217,14 @@ class Upsample(nn.Module):
     def forward(self, x):
         return self.body(x)
 
+
+def _align_spatial_to_ref(x, ref):
+    """Match H×W of x to ref (e.g. skip from CNN) when DWT/IDWT differs by ±1 pixel."""
+    if x.shape[-2:] == ref.shape[-2:]:
+        return x
+    return F.interpolate(x, size=ref.shape[-2:], mode="bilinear", align_corners=False)
+
+
 ##########################################################################
 ##---------- Restormer -----------------------
 class WTNet(nn.Module):
@@ -229,15 +238,20 @@ class WTNet(nn.Module):
         ffn_expansion_factor = 2.66,
         bias = False,
         LayerNorm_type = 'WithBias',   ## Other option 'BiasFree'
-        dual_pixel_task = False        ## True for dual-pixel defocus deblurring only. Also set inp_channels=6
+        dual_pixel_task = False,       ## True for dual-pixel defocus deblurring only. Also set inp_channels=6
+        wavelet_init = 'db4',
+        wavelet_orthogonal = True,
+        wavelet_mode = 'zero'
     ):
 
         super(WTNet, self).__init__()
 
         self.cali = Calibra(dim)
         self.patch_embed = OverlapPatchEmbed(inp_channels, dim)
-        self.xfm = DWTForward(J=1, mode='zero',wave='haar')
-        self.ifm = DWTInverse(mode='zero', wave='haar')
+        wavelet = create_learnable_wavelet(init_wavelet=wavelet_init, orthogonal=wavelet_orthogonal)
+        self.wavelet = wavelet
+        self.xfm = LearnableDWTForward(wavelet, mode=wavelet_mode)
+        self.ifm = LearnableDWTInverse(wavelet, mode=wavelet_mode)
         self.dwc1 = nn.Conv2d(dim*3,dim*3,3,1,1,groups=dim*3,bias=False)
         self.dwc2 = nn.Conv2d(dim*3,dim*3,3,1,1,groups=dim*3,bias=False)
         self.dwc3 = nn.Conv2d(dim*3,dim*3,3,1,1,groups=dim*3,bias=False)
@@ -304,17 +318,20 @@ class WTNet(nn.Module):
         latent = self.latent(l_inp_enc_level4) 
 
         inp_dec_level3 = self.ifm((latent,h_inp_enc_level4))
+        inp_dec_level3 = _align_spatial_to_ref(inp_dec_level3, out_enc_level3)
         inp_dec_level3 = torch.cat([inp_dec_level3, out_enc_level3], 1)
         inp_dec_level3 = self.reduce_chan_level3(inp_dec_level3)
         out_dec_level3 = self.decoder_level3(inp_dec_level3) 
 
         
         inp_dec_level2 = self.ifm((out_dec_level3,h_inp_enc_level3))
+        inp_dec_level2 = _align_spatial_to_ref(inp_dec_level2, out_enc_level2)
         inp_dec_level2 = torch.cat([inp_dec_level2, out_enc_level2], 1)
         inp_dec_level2 = self.reduce_chan_level2(inp_dec_level2)
         out_dec_level2 = self.decoder_level2(inp_dec_level2) 
 
         inp_dec_level1 = self.ifm((out_dec_level2, h_inp_enc_level2))
+        inp_dec_level1 = _align_spatial_to_ref(inp_dec_level1, out_enc_level1)
         inp_dec_level1 = torch.cat([inp_dec_level1, out_enc_level1], 1)
         out_dec_level1 = self.decoder_level1(inp_dec_level1)
         
@@ -330,6 +347,9 @@ class WTNet(nn.Module):
 
 
         return out_dec_level1
+
+    def get_wavelet_loss(self):
+        return self.wavelet.wavelet_loss()
 
 if __name__ == '__main__':
     from fvcore.nn import FlopCountAnalysis

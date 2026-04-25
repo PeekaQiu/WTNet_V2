@@ -128,28 +128,62 @@ class ImageCleanModel(BaseModel):
         else:
             raise ValueError('pixel loss are None.')
 
+        wavelet_opt = train_opt.get('wavelet', None) or {}
+        self.wavelet_loss_weight = float(wavelet_opt.get('loss_weight', 0.0))
+        self.wavelet_freeze_iter = int(wavelet_opt.get('freeze_iter', 0))
+        self._wavelet_frozen = None
+
         # set up optimizers and schedulers
         self.setup_optimizers()
         self.setup_schedulers()
 
     def setup_optimizers(self):
         train_opt = self.opt['train']
+        wavelet_opt = train_opt.get('wavelet', None) or {}
+        wavelet_lr = wavelet_opt.get('lr', None)
+
         optim_params = []
+        wavelet_params = []
 
         for k, v in self.net_g.named_parameters():
             if v.requires_grad:
-                optim_params.append(v)
+                if wavelet_lr is not None and 'wavelet' in k:
+                    wavelet_params.append(v)
+                else:
+                    optim_params.append(v)
             else:
                 logger = get_root_logger()
                 logger.warning(f'Params {k} will not be optimized.')
 
         optim_type = train_opt['optim_g'].pop('type')
         if optim_type == 'Adam':
-            self.optimizer_g = torch.optim.Adam(
-                optim_params, **train_opt['optim_g'])
+            if wavelet_lr is not None and len(wavelet_params) > 0:
+                base_lr = train_opt['optim_g'].get('lr', None)
+                optim_kwargs = dict(train_opt['optim_g'])
+                optim_kwargs.pop('lr', None)
+                self.optimizer_g = torch.optim.Adam(
+                    [
+                        {'params': optim_params, 'lr': base_lr},
+                        {'params': wavelet_params, 'lr': float(wavelet_lr)},
+                    ],
+                    **optim_kwargs)
+            else:
+                self.optimizer_g = torch.optim.Adam(
+                    optim_params, **train_opt['optim_g'])
         elif optim_type == 'AdamW':
-            self.optimizer_g = torch.optim.AdamW(
-                optim_params, **train_opt['optim_g'])
+            if wavelet_lr is not None and len(wavelet_params) > 0:
+                base_lr = train_opt['optim_g'].get('lr', None)
+                optim_kwargs = dict(train_opt['optim_g'])
+                optim_kwargs.pop('lr', None)
+                self.optimizer_g = torch.optim.AdamW(
+                    [
+                        {'params': optim_params, 'lr': base_lr},
+                        {'params': wavelet_params, 'lr': float(wavelet_lr)},
+                    ],
+                    **optim_kwargs)
+            else:
+                self.optimizer_g = torch.optim.AdamW(
+                    optim_params, **train_opt['optim_g'])
         else:
             raise NotImplementedError(
                 f'optimizer {optim_type} is not supperted yet.')
@@ -171,6 +205,15 @@ class ImageCleanModel(BaseModel):
     def optimize_parameters(self, current_iter):
         self.optimizer_g.zero_grad()
 
+        if self.wavelet_freeze_iter > 0:
+            should_freeze = current_iter <= self.wavelet_freeze_iter
+            if self._wavelet_frozen is None or self._wavelet_frozen != should_freeze:
+                bare_net = self.get_bare_model(self.net_g)
+                for name, p in bare_net.named_parameters():
+                    if 'wavelet' in name:
+                        p.requires_grad = (not should_freeze)
+                self._wavelet_frozen = should_freeze
+
         with autocast(enabled=self.use_amp):
             preds = self.net_g(self.lq)
             if not isinstance(preds, list):
@@ -185,8 +228,16 @@ class ImageCleanModel(BaseModel):
                 l_pix += self.cri_pix(pred, self.gt) #此处统计batch的loss
 
             loss_dict['l_pix'] = l_pix
+            l_total = l_pix
 
-        self.amp_scaler.scale(l_pix).backward()
+            if self.wavelet_loss_weight > 0:
+                bare_net = self.get_bare_model(self.net_g)
+                if hasattr(bare_net, 'get_wavelet_loss'):
+                    l_wavelet = bare_net.get_wavelet_loss()
+                    loss_dict['l_wavelet'] = l_wavelet
+                    l_total = l_total + self.wavelet_loss_weight * l_wavelet
+
+        self.amp_scaler.scale(l_total).backward()
         self.amp_scaler.unscale_(self.optimizer_g) # 在梯度裁剪前先unscale梯度
         # l_pix.backward()
 
